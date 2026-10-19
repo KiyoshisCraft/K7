@@ -1,0 +1,45 @@
+name: K7
+on:
+  workflow_dispatch:
+  push:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: unzip -oq k7-source.zip
+      - name: Icone personalizado (se existir icone.png)
+        run: |
+          if [ -f icone.png ]; then
+            IM=$(command -v magick || command -v convert)
+            for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+              mkdir -p app/src/main/res/mipmap-${d%%:*}
+              $IM icone.png -resize ${d##*:}x${d##*:} app/src/main/res/mipmap-${d%%:*}/ic_launcher.png
+            done
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Compilar
+        run: |
+          set -o pipefail
+          gradle assembleDebug -PversionCode=${{ github.run_number }} --no-daemon --console=plain 2>&1 | tee build.log
+      - name: Mostrar erros no resumo
+        if: failure()
+        run: |
+          echo '### Erros de compilacao' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E '^e: |What went wrong' -A2 build.log | head -60 >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+      - run: cp app/build/outputs/apk/debug/app-debug.apk K7.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: K7 v${{ github.run_number }}
+          files: K7.apk
